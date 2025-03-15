@@ -40,5 +40,5 @@ db = DatabaseConnection(
     port=3306
 )
 
-db.connect()
+# db.connect()
 # db.disconnect()

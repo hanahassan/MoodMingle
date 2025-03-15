@@ -65,7 +65,7 @@ const Header = () => {
                 onClick={() => navigateTo('/account')}
               >
                 <User size={16} className="mr-1.5" />
-                {user ? user.displayName.split(' ')[0] : 'Account'}
+                {user ? user.username.split(' ')[0] : 'Account'}
               </button>
             ) : null}
 
