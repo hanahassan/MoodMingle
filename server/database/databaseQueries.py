@@ -68,21 +68,20 @@ class DatabaseQueries:
         SELECT username, password FROM Users WHERE username = %s
         """
         try:
-            print(f"Executing query: {query} with username = {username}")
+            print(f"Executing query for username = {username}")
             self.cursor.execute(query, (username,))
             result = self.cursor.fetchone()
             
-            # Check if result is not None and a user is found
             if result:
-                print(f"Query Result: {result} - User found")
-                return result  # This will return a tuple (username, password)
+                print(f"User found: {result[0]}")
+                return result  # Returns (username, password)
             else:
                 print("No matching user found")
                 return None
         except mysql.connector.Error as e:
             print(f"Error fetching user credentials: {e}")
             return None
-
+        
     # Delete user (Deletes user and cascades Preferences/Activities)
     def delete_user(self, username, password):
         query = """

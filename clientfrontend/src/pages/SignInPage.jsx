@@ -443,6 +443,7 @@
 
 
 // src/pages/SignInPage.jsx
+// src/pages/SignInPage.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, MapPin, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
@@ -450,7 +451,7 @@ import { useAuth } from '../context/AuthContext';
 
 const SignInPage = () => {
   const [isSignIn, setIsSignIn] = useState(true);
-  const { login, signup } = useAuth();
+  const { login, signup, executeSql } = useAuth();
   const navigate = useNavigate();
   
   const [formData, setFormData] = useState({
@@ -470,6 +471,7 @@ const SignInPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -533,52 +535,57 @@ const SignInPage = () => {
     return true;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
     setSuccess('');
+    setDebugInfo(null);
     
-    if (isSignIn) {
-      // Sign In logic
-      const loginData = {
-        // Support login with either email or username
-        email: formData.emailOrUsername,
-        username: formData.emailOrUsername,
-        password: formData.password
-      };
-      
-      const result = login(loginData);
-      
-      if (result.success) {
-        navigate('/');
-      } else {
-        setError(result.error || 'Invalid credentials');
-      }
-    } else {
-      // Sign Up logic
-      if (validateSignUp()) {
-        const result = signup({
-          username: formData.username,
-          email: formData.email,
-          password: formData.password,
-          displayName: formData.displayName,
-          location: formData.location
+    try {
+      if (isSignIn) {
+        // Sign In logic
+        console.log('Attempting login with:', formData.emailOrUsername);
+        const result = await login({
+          emailOrUsername: formData.emailOrUsername,
+          password: formData.password
         });
         
         if (result.success) {
-          setSuccess('Account created successfully! Redirecting...');
-          // Allow the success message to display briefly before redirecting
+          setSuccess('Login successful! Redirecting...');
           setTimeout(() => {
             navigate('/');
-          }, 1500);
+          }, 1000);
         } else {
-          setError(result.error || 'Failed to create account');
+          setError(result.error || 'Invalid credentials');
+        }
+      } else {
+        // Sign Up logic
+        if (validateSignUp()) {
+          const result = await signup({
+            username: formData.username,
+            email: formData.email,
+            password: formData.password,
+            displayName: formData.displayName,
+            location: formData.location
+          });
+          
+          if (result.success) {
+            setSuccess('Account created successfully! Redirecting...');
+            setTimeout(() => {
+              navigate('/');
+            }, 1500);
+          } else {
+            setError(result.error || 'Failed to create account');
+          }
         }
       }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+      console.error("Form submission error:", err);
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   const handleGuestAccess = () => {
@@ -590,6 +597,7 @@ const SignInPage = () => {
     setIsSignIn(!isSignIn);
     setError('');
     setSuccess('');
+    setDebugInfo(null);
   };
 
   // Toggle password visibility
@@ -600,6 +608,41 @@ const SignInPage = () => {
   // Toggle confirm password visibility
   const toggleConfirmPasswordVisibility = () => {
     setShowConfirmPassword(!showConfirmPassword);
+  };
+
+  // For development only - check users in database
+  const checkUsers = async () => {
+    if (executeSql) {
+      setIsLoading(true);
+      try {
+        const result = await executeSql("SELECT * FROM Users");
+        setDebugInfo(result);
+      } catch (err) {
+        setDebugInfo({ error: String(err) });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // For development only - add test users
+  const addTestUsers = async () => {
+    if (executeSql) {
+      setIsLoading(true);
+      try {
+        const result = await executeSql(`
+          INSERT INTO Users (username, name, email, password) VALUES 
+          ('alice123', 'Alice Smith', 'alice@example.com', 'password123'),
+          ('bob99', 'Bob Johnson', 'bob@example.com', 'password123'),
+          ('charlie_yt', 'Charlie Brown', 'charlie@example.com', 'password123')
+        `);
+        setDebugInfo(result);
+      } catch (err) {
+        setDebugInfo({ error: String(err) });
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
   return (
@@ -769,16 +812,16 @@ const SignInPage = () => {
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email or Username
+                    Username
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 text-gray-400" size={20} />
+                    <User className="absolute left-3 top-2.5 text-gray-400" size={20} />
                     <input
                       type="text"
                       name="emailOrUsername"
                       value={formData.emailOrUsername}
                       onChange={handleChange}
-                      placeholder="Enter your email or username"
+                      placeholder="Enter your username"
                       className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
@@ -813,22 +856,61 @@ const SignInPage = () => {
               <button 
                 type="submit" 
                 disabled={isLoading} 
-                className="w-full py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className={`w-full py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                  isLoading ? 'opacity-70 cursor-not-allowed' : ''
+                }`}
               >
-                {isSignIn ? 'Sign In' : 'Sign Up'}
+                {isLoading ? 'Processing...' : isSignIn ? 'Sign In' : 'Create Account'}
               </button>
             </div>
           </form>
           
-          {/* Guest access button */}
-          <div className="mt-4 text-center">
-            <button 
-              onClick={handleGuestAccess} 
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Continue as Guest
-            </button>
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Or</span>
+            </div>
           </div>
+          
+          {/* Guest Access */}
+          <button
+            onClick={handleGuestAccess}
+            className="w-full border border-gray-200 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Continue as Guest
+          </button>
+          
+          {/* Debug Tools - Only for development! */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">Developer Tools</h4>
+              <div className="flex space-x-2">
+                <button
+                  onClick={checkUsers}
+                  className="px-3 py-1 bg-gray-200 rounded text-xs"
+                  disabled={isLoading}
+                >
+                  Check Users
+                </button>
+                <button
+                  onClick={addTestUsers}
+                  className="px-3 py-1 bg-gray-200 rounded text-xs"
+                  disabled={isLoading}
+                >
+                  Add Test Users
+                </button>
+              </div>
+              
+              {debugInfo && (
+                <div className="mt-3 p-3 bg-gray-100 rounded-lg text-xs overflow-auto max-h-40">
+                  <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
