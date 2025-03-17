@@ -3,20 +3,46 @@ import React, { useState } from 'react';
 import { MapPin, Sun, Heart } from 'lucide-react';
 import { useSavedActivities } from '../../context/SavedActivitiesContext';
 import ActivityDetailsModal from './ActivityDetails';
+import { useAuth } from '../../context/AuthContext';
+import axios from "axios";
 
 const ActivityCard = ({ activity }) => {
   const { title, category, location, weather, description } = activity;
   const { saveActivity, removeActivity, isActivitySaved } = useSavedActivities();
   const isSaved = isActivitySaved(title);
   const [showDetails, setShowDetails] = useState(false);
+  const { user } = useAuth();
 
-  const handleSaveToggle = () => {
+  const handleSaveToggle = async () => {
     if (isSaved) {
       removeActivity(title);
     } else {
-      saveActivity(activity);
+      if (user) {
+        // User is logged in, save to DB
+        try {
+          const response = await axios.post('http://127.0.0.1:5000/save-activity', {
+            username: user.username,
+            name: title,
+            genre: category,
+            location,
+            weather,
+            description
+          });
+  
+          if (response.data.success) {
+            saveActivity(activity);
+          } else {
+            console.error("Failed to save activity.");
+          }
+        } catch (error) {
+          console.error("Error saving activity:", error);
+        }
+      } else {
+        // User isn't logged in, just save locally
+        saveActivity(activity);
+      }
     }
-  };
+  };  
 
   const handleViewDetails = () => {
     setShowDetails(true);

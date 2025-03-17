@@ -192,45 +192,36 @@ def weather():
 def get_saved_data():
     return jsonify({"location": latest_location, "weather": latest_weather})
 
+# Save a user activity
+@app.route("/save-activity", methods=["POST"])
+def save_activity():
+    data = request.json
+    username = data.get("username")
+    name = data.get("name")
+    genre = data.get("genre")
+    location = data.get("location")
+    weather = data.get("weather")
+    description = data.get("description")
 
-# def get_recommendations():
-#     try:
-#         # Get location and weather from the frontend request
-#         data = request.json
-#         location = data.get("location", "Unknown")
-#         weather = data.get("weather", "Unknown")
-#         # location = get_weather()
-#         # weather = get_location()
-#         preferences = data.get("preferences", [])
+    if not all([username, name, genre, location, weather, description]):
+        return jsonify({"success": False, "error": "All fields are required"}), 400
 
-#         # Check if a user is logged in
-#         if 'user' in session:
-#             current_user = session['user']
-#             username = current_user.get("username")
+    try:
+        db.connect()
+        dq_query = dq(db.connection)
 
-#             # Connect to the database to fetch user preferences
-#             db.connect()
-#             dq_query = dq(db.connection)
+        success = dq_query.save_activity(username, name, genre, location, weather, description)
+        db.disconnect()
 
-#             # Fetch user preferences from DB if available
-#             user_preferences = dq_query.get_preferences(username)
-#             db.disconnect()
+        if success:
+            return jsonify({"success": True, "message": "Activity saved successfully"})
+        else:
+            return jsonify({"success": False, "error": "Failed to save activity"}), 400
 
-#             # If preferences exist in DB, use them
-#             if user_preferences and user_preferences[0][0]:
-#                 preferences = user_preferences[0][0].split(",")
-
-#         # Generate the prompt and query Gemini
-#         prompt = create_prompt(preferences, location, weather)
-#         recommendations = query_gemini(prompt)
-
-#         # Return recommendations
-#         return jsonify({"recommendations": recommendations})
-
-#     except Exception as e:
-#         print(f"Error in get_recommendations: {str(e)}")
-#         db.disconnect()
-#         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    except Exception as e:
+        print(f"Error saving activity: {str(e)}")
+        db.disconnect()
+        return jsonify({"success": False, "error": "An error occurred while saving the activity"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
