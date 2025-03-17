@@ -444,6 +444,7 @@
 
 // src/pages/SignInPage.jsx
 // src/pages/SignInPage.jsx
+// src/pages/SignInPage.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, MapPin, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
@@ -451,7 +452,7 @@ import { useAuth } from '../context/AuthContext';
 
 const SignInPage = () => {
   const [isSignIn, setIsSignIn] = useState(true);
-  const { login, signup, executeSql } = useAuth();
+  const { login, signup } = useAuth();
   const navigate = useNavigate();
   
   const [formData, setFormData] = useState({
@@ -471,7 +472,6 @@ const SignInPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [debugInfo, setDebugInfo] = useState(null);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -540,7 +540,6 @@ const SignInPage = () => {
     setIsLoading(true);
     setError('');
     setSuccess('');
-    setDebugInfo(null);
     
     try {
       if (isSignIn) {
@@ -597,7 +596,6 @@ const SignInPage = () => {
     setIsSignIn(!isSignIn);
     setError('');
     setSuccess('');
-    setDebugInfo(null);
   };
 
   // Toggle password visibility
@@ -608,41 +606,6 @@ const SignInPage = () => {
   // Toggle confirm password visibility
   const toggleConfirmPasswordVisibility = () => {
     setShowConfirmPassword(!showConfirmPassword);
-  };
-
-  // For development only - check users in database
-  const checkUsers = async () => {
-    if (executeSql) {
-      setIsLoading(true);
-      try {
-        const result = await executeSql("SELECT * FROM Users");
-        setDebugInfo(result);
-      } catch (err) {
-        setDebugInfo({ error: String(err) });
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  // For development only - add test users
-  const addTestUsers = async () => {
-    if (executeSql) {
-      setIsLoading(true);
-      try {
-        const result = await executeSql(`
-          INSERT INTO Users (username, name, email, password) VALUES 
-          ('alice123', 'Alice Smith', 'alice@example.com', 'password123'),
-          ('bob99', 'Bob Johnson', 'bob@example.com', 'password123'),
-          ('charlie_yt', 'Charlie Brown', 'charlie@example.com', 'password123')
-        `);
-        setDebugInfo(result);
-      } catch (err) {
-        setDebugInfo({ error: String(err) });
-      } finally {
-        setIsLoading(false);
-      }
-    }
   };
 
   return (
@@ -882,35 +845,6 @@ const SignInPage = () => {
           >
             Continue as Guest
           </button>
-          
-          {/* Debug Tools - Only for development! */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">Developer Tools</h4>
-              <div className="flex space-x-2">
-                <button
-                  onClick={checkUsers}
-                  className="px-3 py-1 bg-gray-200 rounded text-xs"
-                  disabled={isLoading}
-                >
-                  Check Users
-                </button>
-                <button
-                  onClick={addTestUsers}
-                  className="px-3 py-1 bg-gray-200 rounded text-xs"
-                  disabled={isLoading}
-                >
-                  Add Test Users
-                </button>
-              </div>
-              
-              {debugInfo && (
-                <div className="mt-3 p-3 bg-gray-100 rounded-lg text-xs overflow-auto max-h-40">
-                  <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
