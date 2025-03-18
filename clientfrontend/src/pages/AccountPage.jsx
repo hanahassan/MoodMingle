@@ -1,20 +1,107 @@
 // src/pages/AccountPage.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSavedActivities } from '../context/SavedActivitiesContext';
-import { User, Heart, Settings, LogOut, ChevronDown } from 'lucide-react';
+import { User, Heart, Settings, LogOut, ChevronDown, X, Calendar } from 'lucide-react';
 import AccountSettings from '../components/account/AccountSettings';
 import ActivityCard from '../components/activities/ActivityCard';
+import axios from 'axios';
+
+const API_BASE_URL = "http://localhost:5001";
 
 const AccountPage = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
   const { savedActivities } = useSavedActivities();
   const [activeTab, setActiveTab] = useState('profile');
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [userInterests, setUserInterests] = useState([]);
+  const [memberSince, setMemberSince] = useState('');
 
-  // Redirect to login if not logged in
+  // Update userInterests whenever user.interests changes
+  useEffect(() => {
+    if (user && user.interests) {
+      setUserInterests(user.interests);
+    }
+  }, [user]);
+
+  // Fetch user details including member since date
+  useEffect(() => {
+    const fetchUserDetails = async () => {
+      if (user && !user.isGuest) {
+        try {
+          // First check if memberSince already exists in user object
+          if (user.memberSince) {
+            setMemberSince(user.memberSince);
+          } else {
+            // If not, fetch it from the server
+            const response = await axios.get(`${API_BASE_URL}/user-details`, {
+              withCredentials: true
+            });
+            
+            if (response.data.success && response.data.userDetails.memberSince) {
+              setMemberSince(response.data.userDetails.memberSince);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching user details:', error);
+          setMemberSince('Unable to fetch');
+        }
+      }
+    };
+    
+    fetchUserDetails();
+  }, [user]);
+
+  // Move all hooks to the top level before any conditional returns
+  useEffect(() => {
+    if (isDeleting) {
+      // Add the keyframes and animation class only when in delete mode
+      const style = document.createElement('style');
+      style.id = 'wiggle-animation-style';
+      style.innerHTML = `
+        @keyframes wiggle {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(-1deg); }
+          50% { transform: rotate(0deg); }
+          75% { transform: rotate(1deg); }
+          100% { transform: rotate(0deg); }
+        }
+        .wiggle-animation {
+          animation: wiggle 0.2s infinite;
+          animation-timing-function: ease-in-out;
+        }
+      `;
+      document.head.appendChild(style);
+    } else {
+      // Remove the style when not in delete mode
+      const existingStyle = document.getElementById('wiggle-animation-style');
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+    }
+
+    // Cleanup on component unmount
+    return () => {
+      const existingStyle = document.getElementById('wiggle-animation-style');
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+    };
+  }, [isDeleting]);
+
+  // Handle authentication loading state
+  if (isLoading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8 flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-700"></div>
+      </div>
+    );
+  }
+
+  // Redirect if not authenticated
   if (!user) {
     navigate('/signin');
     return null;
@@ -33,6 +120,42 @@ const AccountPage = () => {
     setShowMobileTabMenu(false);
   };
 
+  // const toggleDeleteMode = () => {
+  //   setIsDeleting(!isDeleting);
+  // };
+
+  const handleDeleteInterest = async (interestToDelete) => {
+    console.log(`Deleting interest: ${interestToDelete}`);
+  
+    try {
+      const response = await fetch(`${API_BASE_URL}/remove-interest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // Keep the session alive
+        body: JSON.stringify({ interest: interestToDelete }),
+      });
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        console.error("Failed to remove interest:", data.error);
+        alert(`Error: ${data.error}`);
+        return;
+      }
+  
+      console.log("Interest removed successfully:", data);
+  
+      // Update UI state after a successful backend response
+      setUserInterests((prev) => prev.filter((interest) => interest !== interestToDelete));
+    } catch (error) {
+      console.error("Error removing interest:", error);
+      alert("Something went wrong. Please try again.");
+    }
+  };
+  
+
   const ProfileSection = () => (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
@@ -40,7 +163,7 @@ const AccountPage = () => {
           <User size={32} className="text-purple-600" />
         </div>
         <div className="text-center sm:text-left">
-          <h2 className="text-xl font-semibold">{user?.displayName || 'User Name'}</h2>
+          <h2 className="text-xl font-semibold">{user?.displayName ||user.name || user.username || 'User Name'}</h2>
           <p className="text-gray-500">{user?.email || 'email@example.com'}</p>
         </div>
       </div>
@@ -51,13 +174,16 @@ const AccountPage = () => {
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <h3 className="font-medium mb-2">Member Since</h3>
-          <p className="text-gray-600">{user?.memberSince || 'February 2024'}</p>
+          <div className="flex items-center text-gray-600">
+            <Calendar size={16} className="mr-2 text-purple-500" />
+            <p>{user?.memberSince || memberSince || 'Loading...'}</p>
+          </div>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <h3 className="font-medium mb-2">Interests</h3>
-          {user?.interests && user.interests.length > 0 ? (
+          {userInterests && userInterests.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {user.interests.map((interest, index) => (
+              {userInterests.map((interest, index) => (
                 <span
                   key={index}
                   className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full text-xs"
@@ -125,27 +251,49 @@ const AccountPage = () => {
   const InterestsSection = () => (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">Your Interests</h2>
-      {user?.interests && user.interests.length > 0 ? (
+      {userInterests && userInterests.length > 0 ? (
         <div>
           <div className="flex flex-wrap gap-2 mb-6">
-            {user.interests.map((interest, index) => (
+            {userInterests.map((interest, index) => (
               <span
                 key={index}
-                className="bg-purple-100 text-purple-600 px-3 py-1 rounded-full text-sm flex items-center"
+                className={`bg-purple-100 text-purple-600 px-3 py-1 rounded-full text-sm flex items-center ${
+                  isDeleting ? "wiggle-animation" : ""
+                }`}
               >
                 {interest}
+                {isDeleting && (
+                  <button
+                    onClick={() => handleDeleteInterest(interest)}
+                    className="ml-2 bg-purple-200 hover:bg-purple-300 rounded-full p-1 text-purple-600 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </span>
             ))}
           </div>
           <p className="text-gray-600">
             These interests are used to generate personalized activity recommendations for you.
           </p>
-          <button
-            onClick={() => navigate('/')}
-            className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            Update Interests
-          </button>
+          <div className="flex flex-wrap gap-3 mt-4">
+            <button
+              onClick={() => navigate("/")}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              Add Interests
+            </button>
+            <button
+              onClick={() => setIsDeleting(!isDeleting)}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                isDeleting
+                  ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  : "bg-purple-600 text-white hover:bg-purple-700"
+              }`}
+            >
+              {isDeleting ? "Done" : "Delete Interests"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-white p-8 rounded-lg shadow-sm text-center">
@@ -154,7 +302,7 @@ const AccountPage = () => {
             Adding interests helps us recommend activities that match your preferences.
           </p>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate("/")}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
           >
             Add Interests

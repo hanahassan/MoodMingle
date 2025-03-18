@@ -6,9 +6,12 @@ import ActivityCard from '../components/activities/ActivityCard';
 import { useAuth } from '../context/AuthContext';
 import axios from "axios";
   
+const API_BASE_URL = "http://localhost:5001"; // Ensure this matches your backend URL
 
 const DiscoverPage = () => {
-  const { user, updateUserInterests } = useAuth();
+  const { user } = useAuth();
+  console.log('DiscoverPage - Current user:', user);
+  
   const [activities, setActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [generatedInterests, setGeneratedInterests] = useState([]);
@@ -16,76 +19,133 @@ const DiscoverPage = () => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [location, setLocation] = useState("");
   const [weather, setWeather] = useState(null);
-  const [error, setError] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Load user interests if logged in
   useEffect(() => {
     if (user && user.interests) {
-      setUserInterests(user.interests);
+      console.log('Setting user interests from user object:', user.interests);
+      // Ensure unique interests only when loading from user
+      const uniqueInterests = [...new Set(user.interests)];
+      setUserInterests(uniqueInterests);
     }
   }, [user]);
 
   const handleGenerateActivities = async (selectedInterests) => {
-    // If no interests are selected, clear activities
-    if (selectedInterests.length === 0) {
-      setActivities([]);
-      setGeneratedInterests([]);
-      setHasGenerated(false);
-      return;
-    }
+    // Ensure we're working with unique interests
+    const uniqueInterests = [...new Set(selectedInterests)];
+    console.log('Generating activities with interests:', uniqueInterests);
     
+    // Optimistically update UI
+    setGeneratedInterests(uniqueInterests);
+    setUserInterests(uniqueInterests);
+    setHasGenerated(false); // Reset previous results
     setIsLoading(true);
-    setGeneratedInterests(selectedInterests);
-    
-    // If logged in, save the interests to user profile
-    if (user) {
-      // Update both local state and context
-      setUserInterests(selectedInterests);
-      updateUserInterests(selectedInterests);
-    }
-    
+  
     try {
-      // In a real application, you would make an API call here
-      // For now, we'll simulate with a timeout
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Generate mock activities based on selected interests
-      const mockActivities = selectedInterests.flatMap(interest => {
-        return [
-          {
-            title: `${interest} Workshop`,
-            category: interest,
-            location: "Local Community Center",
-            weather: "Indoor",
-            description: `Join fellow ${interest} enthusiasts for a hands-on workshop experience.`
-          },
-          {
-            title: `${interest} Meetup`,
-            category: interest,
-            location: "Downtown",
-            weather: "Any",
-            description: `Connect with others who share your passion for ${interest}.`
-          }
-        ];
+      if (user) {
+        console.log('Saving interests to database for user:', user.username);
+        // Save interests to the database
+        const response = await axios.post(
+          `${API_BASE_URL}/save-interests`,
+          { interests: uniqueInterests },
+          { withCredentials: true }
+        );
+  
+        if (!response.data.success) {
+          console.error("Failed to save interests:", response.data.error);
+          setUserInterests([]); // Rollback UI update
+        }
+      }
+  
+      // Fetch activity recommendations
+      console.log('Fetching activity recommendations with:', { 
+        interests: uniqueInterests, 
+        location, 
+        weather: weather?.condition 
       });
       
-      setActivities(mockActivities);
+      const response = await fetch(`${API_BASE_URL}/get-recommendations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          interests: uniqueInterests,
+          location: location,
+          weather: weather?.condition,
+        }),
+      });
+  
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+  
+      const data = await response.json();
+      console.log('Received recommendations:', data);
+  
+      // Transform API response into frontend-friendly format
+      const transformedActivities = [
+        ...data.recommendations.outdoor_activities,
+        ...data.recommendations.indoor_activities,
+        ...data.recommendations.local_events,
+      ].map((activity) => ({
+        title: activity.name,
+        category: activity.genre,
+        location: activity.location,
+        weather: activity.weather,
+        description: activity.description,
+      }));
+  
+      console.log('Transformed activities:', transformedActivities);
+      setActivities(transformedActivities);
       setHasGenerated(true);
     } catch (error) {
-      console.error('Error generating activities:', error);
+      console.error("Error generating activities:", error);
+      setErrorMessage("Failed to generate activities. Please try again later.");
+      setUserInterests([]); // Rollback UI update
     } finally {
       setIsLoading(false);
     }
   };
-
+  
   // Function to handle interest changes from InterestTags component
   const handleInterestsChange = (updatedInterests) => {
+    console.log('Interests changed:', updatedInterests);
     // Only update activities if we had previously generated them
     // This prevents clearing when we haven't generated anything yet
     if (hasGenerated && updatedInterests.length === 0) {
+      console.log('Clearing activities due to empty interests');
       setActivities([]);
       setGeneratedInterests([]);
       setHasGenerated(false);
+    }
+  };
+
+  // Custom handler for adding interests that prevents duplicates
+  const handleAddInterest = (interest) => {
+    // Normalize the interest by trimming and converting to lowercase for comparison
+    const normalizedInterest = interest.trim().toLowerCase();
+    console.log('Adding interest:', interest, 'normalized:', normalizedInterest);
+    
+    // Check if this interest already exists (case-insensitive comparison)
+    const isDuplicate = userInterests.some(
+      existingInterest => existingInterest.toLowerCase() === normalizedInterest
+    );
+    
+    if (!isDuplicate && normalizedInterest) {
+      console.log('Adding new interest to list:', interest.trim());
+      // Use the original case of the interest, but prevent duplicates
+      document.dispatchEvent(new CustomEvent('addInterest', { detail: interest.trim() }));
+    } else if (isDuplicate) {
+      console.log('Interest already exists in list:', interest);
+      // Optionally show a message or notification that this is a duplicate
+      setErrorMessage("This interest is already in your list.");
+      
+      // Clear the error message after 3 seconds
+      setTimeout(() => {
+        setErrorMessage("");
+      }, 3000);
     }
   };
 
@@ -95,23 +155,30 @@ const DiscoverPage = () => {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
+          console.log('Got user coordinates:', latitude, longitude);
 
           try {
-            const response = await axios.post("http://127.0.0.1:5000/get_weather", {
+            const response = await axios.post(`${API_BASE_URL}/get_weather`, {
               latitude,
               longitude,
             });
 
+            console.log('Weather data received:', response.data);
             setLocation(response.data.location);
             setWeather(response.data.weather);
           } catch (err) {
-            setError("Failed to fetch weather data.");
+            console.error("Weather fetch error:", err);
+            setErrorMessage("Failed to fetch weather data.");
           }
         },
-        () => setError("Location access denied.")
+        (error) => {
+          console.error('Geolocation error:', error);
+          setErrorMessage("Location access denied.");
+        }
       );
     } else {
-      setError("Geolocation is not supported.");
+      console.log('Geolocation not supported by browser');
+      setErrorMessage("Geolocation is not supported.");
     }
   }, []);
 
@@ -120,9 +187,7 @@ const DiscoverPage = () => {
       <div className="max-w-2xl mx-auto"> 
         <section className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-8">
           <div className="flex flex-col space-y-4">
-            <SearchBar onAddInterest={(interest) => {
-              document.dispatchEvent(new CustomEvent('addInterest', { detail: interest }));
-            }} />
+            <SearchBar onAddInterest={handleAddInterest} />
             <InterestTags 
               onGenerateActivities={handleGenerateActivities}
               onInterestsChange={handleInterestsChange}
@@ -132,13 +197,18 @@ const DiscoverPage = () => {
         </section>
         
         {user && (
-          <div className="bg-purple-50 rounded-xl p-4 mb-8 text-sm sm:text-base">
+          <div className="bg-purple-50 rounded-xl p-4 mb-8 text-sm sm:text-base text-center">
+            {console.log('Rendering welcome message with user:', user)}
             <p className="text-purple-600">
-              Welcome back, <strong>{user.displayName}</strong>! 
-              {userInterests.length > 0 
-                ? ` Your saved interests: ${userInterests.join(', ')}`
-                : ' Start adding interests to get personalized activity suggestions.'}
+              Welcome back, <strong>{user.name || user.username}</strong>! 
             </p>
+          </div>
+        )}
+        
+        {/* Display error message if any */}
+        {errorMessage && (
+          <div className="bg-red-50 rounded-xl p-4 mb-8 text-sm sm:text-base">
+            <p className="text-red-600">{errorMessage}</p>
           </div>
         )}
         
@@ -190,6 +260,5 @@ const DiscoverPage = () => {
     </div>
   );
 };
-
 
 export default DiscoverPage;
