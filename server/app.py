@@ -1,8 +1,8 @@
 #app.py
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
-from database.databaseConnection import DatabaseConnection 
-from database.databaseQueries import DatabaseQueries as dq 
+from database.databaseConnection import DatabaseConnection  # Ensure this is set up to connect to MySQL
+from database.databaseQueries import DatabaseQueries as dq  # Import your query class
 from LLMService.LLMService import create_prompt, query_gemini
 from WeatherService.googleapi import get_location, get_weather
 import mysql.connector
@@ -72,6 +72,23 @@ def check_user(username):
             })
         else:
             return jsonify({"exists": False})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+# Create test user
+@app.route("/create-test-user", methods=["GET"])
+def create_test_user():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Users (username, name, email, password) VALUES (%s, %s, %s, %s)",
+            ("testuser", "Test User", "test@example.com", "password123")
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": True, "message": "Test user created"})
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -172,7 +189,7 @@ def signup():
         # Create user object for response
         user_obj = {
             "username": username,
-            "name": name,  # Use name instead of displayName
+            "name": name,
             "email": email,
             "memberSince": current_date
         }
@@ -248,7 +265,7 @@ def update_profile():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"An error occurred updating profile: {str(e)}"}), 500
 
-# Get user details
+
 @app.route("/user-details", methods=["GET"])
 def get_user_details():
     if "user" not in session:
@@ -425,13 +442,36 @@ def get_recommendations():
         prompt = create_prompt(interests, location, weather, temperature)
         recommendations = query_gemini(prompt)
 
+        print(f'RECOMMENDATIONS : {recommendations}')
+
         return jsonify({"recommendations": recommendations})
     except Exception as e:
         print(f"Error in get_recommendations: {str(e)}")
         traceback.print_exc()
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
-# Database query to get Saved Activities for a user
+@app.route("/get_weather", methods=["POST"])
+def weather():
+    global latest_location, latest_weather  # Store in global variables
+
+    data = request.json
+    lat, lon = data.get("latitude"), data.get("longitude")
+
+    if not lat or not lon:
+        return jsonify({"error": "Invalid coordinates"}), 400
+
+    latest_location = get_location(lat, lon)
+    latest_weather = get_weather(lat, lon)
+
+    return jsonify({"location": latest_location, "weather": latest_weather})
+
+
+# Endpoint to get saved weather data for LLM
+@app.route("/get_saved_data", methods=["GET"])
+def get_saved_data():
+    return jsonify({"location": latest_location, "weather": latest_weather})
+
+
 @app.route("/saved-activities", methods=["GET"])
 def get_saved_activities():
     if 'user' not in session:
@@ -465,7 +505,7 @@ def get_saved_activities():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
     
-# Save an activity for a user
+
 @app.route("/save-activity", methods=["POST"])
 def save_activity():
     if "user" not in session:
@@ -501,7 +541,6 @@ def save_activity():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# Remove an activity for a user
 @app.route("/remove-activity", methods=["POST"])
 def remove_activity():
     if "user" not in session:
@@ -531,7 +570,6 @@ def remove_activity():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# Save interests for a user
 @app.route("/save-interests", methods=["POST"])
 def save_interests():
     if "user" not in session:
@@ -569,7 +607,6 @@ def save_interests():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# Get interests for a user
 @app.route("/get-interests", methods=["GET"])
 def get_interests():
     if "user" not in session:
@@ -594,7 +631,31 @@ def get_interests():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# Remove an interest for a user
+@app.route("/get-previous-interests", methods=["GET"])
+def get_previous_interests():
+    if "user" not in session:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    
+    username = session["user"]["username"]
+    
+    try:
+        datab = DatabaseConnection(dbname="MoodMingle", user="moodmingle_user", password="team2", host="104.198.30.234", port=3306)
+        datab.connect()
+        db_queries = dq(datab.connection)
+        
+        # Fetch previous interests for the user
+        # This assumes you have a method in your database queries class to get previous interests
+        previous_interests = db_queries.get_previous_interests(username)
+        
+        DatabaseConnection.disconnect(datab)
+        
+        if previous_interests is None:
+            return jsonify({"success": False, "error": "Failed to fetch previous interests"}), 500
+        
+        return jsonify({"success": True, "interests": previous_interests})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/remove-interest", methods=["POST"])
 def remove_interest():
     if "user" not in session:
@@ -627,22 +688,6 @@ def remove_interest():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-# API Endpoint to Get Weather
-@app.route("/get_weather", methods=["POST"])
-def weather():
-    global latest_location, latest_weather  # Store in global variables
-
-    data = request.json
-    lat, lon = data.get("latitude"), data.get("longitude")
-
-    if not lat or not lon:
-        return jsonify({"error": "Invalid coordinates"}), 400
-
-    latest_location = get_location(lat, lon)
-    latest_weather = get_weather(lat, lon)
-
-    return jsonify({"location": latest_location, "weather": latest_weather})
 
 if __name__ == "__main__":
     app.run(port=5001, debug=True)

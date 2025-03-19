@@ -1,11 +1,10 @@
-# COMMIT
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import json
 import re
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 
 load_dotenv()
 
@@ -14,7 +13,8 @@ CORS(app, origins=["http://localhost:3000"])
 
 GEMINI_API_KEY = os.getenv("LLM_API_KEY")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Configure the API key
+genai.configure(api_key=GEMINI_API_KEY)
 
 # Function to generate a structured prompt for Gemini
 def create_prompt(interests, location, weather, temperature):
@@ -35,12 +35,15 @@ def create_prompt(interests, location, weather, temperature):
 # Function to query Gemini AI
 def query_gemini(prompt):
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
+        # Create the model
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        
+        # Generate content
+        response = model.generate_content(prompt)
 
-        raw_text = response.candidates[0].content.parts[0].text
+        # Get the text response
+        raw_text = response.text
+        print(f'RAW RESPONSE: {raw_text}')
 
         # Strip triple backticks and "json" label if present
         clean_json_text = re.sub(r"```json\n|\n```", "", raw_text)
